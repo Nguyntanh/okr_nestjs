@@ -1,0 +1,124 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}
+
+enum ObjectiveType {
+  COMPANY
+  DEPARTMENT
+  USER
+}
+
+enum ConfidenceLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model User {
+  id            String      @id @default(uuid()) @db.Char(36)
+  email         String      @unique
+  passwordHash  String      @map("password_hash")
+  fullName      String      @map("full_name")
+  role          Role        @default(USER)
+  
+  objectives    Objective[]
+  checkIns      CheckIn[]
+
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Cycle {
+  id          Int         @id @default(autoincrement())
+  name        String
+  startDate   DateTime    @map("start_date") @db.Date
+  endDate     DateTime    @map("end_date") @db.Date
+  isActive    Boolean     @default(false) @map("is_active")
+  
+  objectives  Objective[]
+
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  @@map("cycles")
+}
+
+model Objective {
+  id                String          @id @default(uuid()) @db.Char(36)
+  title             String
+  type              ObjectiveType
+  cycleId           Int             @map("cycle_id")
+  ownerId           String          @map("owner_id") @db.Char(36)
+  parentObjectiveId String?         @map("parent_objective_id") @db.Char(36)
+
+  cycle             Cycle           @relation(fields: [cycleId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+  owner             User            @relation(fields: [ownerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  
+  // Self-relation cho Tree OKR
+  parentObjective   Objective?      @relation("ObjectiveToObjective", fields: [parentObjectiveId], references: [id], onUpdate: Cascade, onDelete: SetNull)
+  childObjectives   Objective[]     @relation("ObjectiveToObjective")
+
+  keyResults        KeyResult[]
+
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  @@index([ownerId, cycleId])
+  @@index([parentObjectiveId])
+  @@map("objectives")
+}
+
+model KeyResult {
+  id            String      @id @default(uuid()) @db.Char(36)
+  objectiveId   String      @map("objective_id") @db.Char(36)
+  title         String
+  targetValue   Decimal     @map("target_value") @db.Decimal(10, 2)
+  currentValue  Decimal     @default(0.00) @map("current_value") @db.Decimal(10, 2)
+  unit          String
+  weight        Int         @default(100)
+  
+  objective     Objective   @relation(fields: [objectiveId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  checkIns      CheckIn[]
+
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@index([objectiveId])
+  @@map("key_results")
+}
+
+model CheckIn {
+  id              String          @id @default(uuid()) @db.Char(36)
+  keyResultId     String          @map("key_result_id") @db.Char(36)
+  userId          String          @map("user_id") @db.Char(36)
+  previousValue   Decimal         @map("previous_value") @db.Decimal(10, 2)
+  newValue        Decimal         @map("new_value") @db.Decimal(10, 2)
+  confidenceLevel ConfidenceLevel @map("confidence_level")
+  notes           String?         @db.Text
+  
+  keyResult       KeyResult       @relation(fields: [keyResultId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  user            User            @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Restrict)
+
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  @@index([keyResultId, createdAt(sort: Desc)])
+  @@map("check_ins")
+}
